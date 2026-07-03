@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+  <button id="theme-toggle" aria-label="Toggle theme" role="switch" aria-pressed="false"></button>
   <div class="dashboard">
     <section class="card time-greeting" id="time-display">
       <h2 class="card-title">Clock</h2>
@@ -27,9 +28,17 @@
 
     <section class="card todo-list" id="todo-list">
       <h2 class="card-title">To-Do List</h2>
-      <div class="todo-input-row">
-        <input id="todo-input" type="text" placeholder="Add a new task...">
-        <button id="todo-add">Add</button>
+      <div class="todo-controls">
+        <div class="todo-input-row">
+          <input id="todo-input" type="text" placeholder="Add a new task...">
+          <button id="todo-add">Add</button>
+        </div>
+        <select id="todo-sort">
+          <option value="pending">Pending first</option>
+          <option value="alpha">Alphabetical (A-Z)</option>
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+        </select>
       </div>
       <ul id="todo-items"></ul>
     </section>

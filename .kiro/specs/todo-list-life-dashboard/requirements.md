@@ -113,3 +113,25 @@ The To-Do List Life Dashboard is a simple web-based dashboard that helps users o
 4. THE Dashboard SHALL provide visual feedback for user interactions (button clicks, hover states)
 5. THE Dashboard SHALL load quickly with no noticeable delay in user interactions
 6. ALL interactive elements SHALL have clear affordances indicating they are clickable/tappable
+
+### Extra Features
+
+The following features are not part of the core requirements but have been implemented as bonus enhancements:
+
+#### Task Sort
+
+The To-Do List includes a sort dropdown allowing users to reorder tasks by:
+- Pending first (default)
+- Alphabetical (A-Z)
+- Newest first
+- Oldest first
+
+The sort preference is persisted to Local Storage and restored on page load.
+
+#### Duplicate Task Detection
+
+When adding a new task, the system checks if a task with the same description (case-insensitive) already exists. If a duplicate is found, a warning message is displayed and the task is not added.
+
+#### Theme Toggle
+
+A dark/light mode toggle button is provided in the top-right corner. The theme preference is persisted to Local Storage and also respects the system's `prefers-color-scheme` setting on first visit.

@@ -11,7 +11,7 @@
 
 ## Overview
 
-The To-Do List Life Dashboard is a single-page web application built with vanilla HTML, CSS, and JavaScript. It provides a centralized dashboard with five integrated components — time display, greeting, focus timer, to-do list, and quick links — all running entirely client-side with data persisted through the browser's Local Storage API.
+The To-Do List Life Dashboard is a single-page web application built with vanilla HTML, CSS, and JavaScript. It provides a centralized dashboard with five integrated components — time display, greeting, focus timer, to-do list, and quick links — all running entirely client-side with data persisted through the browser's Local Storage API. Three bonus enhancements — task sorting, duplicate task detection, and a dark/light theme toggle — extend the core experience without external dependencies.
 
 ### Design Goals
 
@@ -63,10 +63,12 @@ graph TB
 
 ### Data Flow
 
-1. **Page Load**: Read `tasks` and `links` from localStorage → populate in-memory arrays → call `renderTodos()` and `renderLinks()` → start `setInterval(updateClock, 1000)`
+1. **Page Load**: Read `tasks`, `links`, `theme`, and `todoSort` from localStorage → populate in-memory arrays and state → apply theme class to `<html>` → set sort dropdown value → call `renderTodos()` and `renderLinks()` → start `setInterval(updateClock, 1000)`
 2. **User Action** (add/edit/toggle/delete): Mutate in-memory array → call render function for that component → immediately write updated array to localStorage
 3. **Timer Tick**: `updateClock()` updates the clock display every second; `updateGreeting()` runs inside the same tick and only updates the DOM when the greeting category changes
 4. **Focus Timer**: Uses its own `setInterval(1000)` during active countdown; clears interval on pause/stop/reset; not persisted across page reloads
+5. **Theme Toggle**: Click toggles `.dark` class on `<html>` → updates button icon → writes theme value to localStorage
+6. **Sort Change**: Select change updates `currentSort` → writes to localStorage → re-renders task list with sorted copy
 
 ## Components and Interfaces
 
@@ -179,6 +181,69 @@ running → [timer hits 00:00] → completed → [auto-notify] → idle
 - Link click opens `window.open(link.url, '_blank', 'noopener,noreferrer')`
 - Edit flow: clicking edit opens an inline form (name input + URL input + Save/Cancel buttons) that replaces the link button display
 - Uses `crypto.randomUUID()` for link IDs
+
+### Component 6: Theme Toggle (Extra Feature)
+
+**Purpose**: Allow users to switch between light and dark color schemes, with preference persisted across sessions.
+
+**Container**: `<button id="theme-toggle">`
+
+**Internal Structure**:
+- Fixed-position circular button in top-right corner
+- Displays ☀ (sun) in dark mode, 🌙 (moon) in light mode
+- Uses `aria-pressed` for accessibility state
+
+**Interfaces**:
+- **Functions**: `initTheme()`, `toggleTheme()`, `updateThemeIcon()`
+- **Events**: Click handler on theme toggle button
+- **Persistence**: `localStorage["theme"]`
+
+**Implementation Notes**:
+- On page load, checks `localStorage["theme"]`; if absent, respects `prefers-color-scheme: dark` media query
+- Toggles `.dark` class on `<html>` element to activate CSS custom property overrides
+- Updates button text (☀/🌙) and `aria-pressed` attribute on each toggle
+- Theme preference is saved to localStorage immediately on toggle
+
+### Component 7: Task Sort (Extra Feature)
+
+**Purpose**: Let users reorder the to-do list by different criteria without modifying the underlying data.
+
+**Container**: `<select id="todo-sort">` inside `.todo-controls`
+
+**Internal Structure**:
+- Dropdown with four options: Pending first, Alphabetical (A-Z), Newest first, Oldest first
+- Positioned below the task input row
+
+**Interfaces**:
+- **Functions**: `sortTasks(arr)` — pure function that returns a sorted copy of the tasks array
+- **Events**: `change` handler on the `<select>` element
+- **Persistence**: `localStorage["todoSort"]`
+
+**Implementation Notes**:
+- Sorting is non-destructive — the original `tasks` array is never mutated
+- "Pending first" sorts incomplete tasks before completed ones
+- "Newest first" reverses insertion order (last added appears first)
+- Sort preference is saved to localStorage and restored on page load
+- Re-renders the list immediately on selection change
+
+### Component 8: Duplicate Task Detection (Extra Feature)
+
+**Purpose**: Prevent users from accidentally creating tasks with identical descriptions.
+
+**Container**: Inline warning below the task input row
+
+**Internal Structure**:
+- Transient `<div id="todo-warning">` element, shown only when a duplicate is detected
+- Auto-dismisses after 2 seconds
+
+**Interfaces**:
+- **Functions**: `showTodoWarning(message)` — creates or reuses a warning element, displays the message, sets a 2-second timeout to clear it
+
+**Implementation Notes**:
+- Duplicate check is case-insensitive (`text.toLowerCase()` comparison)
+- If the same text already exists in the `tasks` array, `addTodo()` calls `showTodoWarning('Task already exists')` and returns without creating a new task
+- Warning element is created once and reused to avoid DOM pollution
+- Uses `clearTimeout` on the previous timer to prevent rapid toggling from stacking warnings
 
 ## Data Models
 
@@ -366,6 +431,24 @@ Corrupted JSON in localStorage is discarded on load and replaced with empty defa
 
 **Validates: Requirements 2.6**
 
+### Property 10: Theme persistence
+
+`initTheme()` reads `localStorage["theme"]` on load and applies the `.dark` class accordingly. If no stored preference exists, the system `prefers-color-scheme` is honored. `toggleTheme()` writes the new value immediately.
+
+**Validates: Extra Features — Theme Toggle**
+
+### Property 11: Sort persistence
+
+The selected sort option is written to `localStorage["todoSort"]` on every change and restored on page load, ensuring the user's preferred order survives browser restarts.
+
+**Validates: Extra Features — Task Sort**
+
+### Property 12: Duplicate task rejection
+
+`addTodo()` performs a case-insensitive comparison against all existing task texts before inserting. If a match is found, the operation is rejected and a transient warning is displayed.
+
+**Validates: Extra Features — Duplicate Task Detection**
+
 ## Testing Strategy
 
 ### Unit Testing
@@ -385,6 +468,9 @@ Corrupted JSON in localStorage is discarded on load and replaced with empty defa
 6. Add a link, click it (opens new tab), edit name/URL, delete link — all persist across reload
 7. Resize browser — layout switches to single column at 768px and below
 8. Disable localStorage (browser dev tools) — banner appears, app still works in-memory
+9. Click theme toggle — switches between light/dark mode; preference persists across reload
+10. Add tasks, change sort dropdown — list reorders immediately; preference persists across reload
+11. Add a task with text identical to an existing task (case-insensitive) — warning appears, no duplicate created
 
 ## Files
 
@@ -400,6 +486,7 @@ Corrupted JSON in localStorage is discarded on load and replaced with empty defa
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+  <button id="theme-toggle" aria-label="Toggle theme" role="switch" aria-pressed="false"></button>
   <div class="dashboard">
     <section class="card time-greeting" id="time-display">
       <h2 class="card-title">Clock</h2>
@@ -420,9 +507,17 @@ Corrupted JSON in localStorage is discarded on load and replaced with empty defa
 
     <section class="card todo-list" id="todo-list">
       <h2 class="card-title">To-Do List</h2>
-      <div class="todo-input-row">
-        <input id="todo-input" type="text" placeholder="Add a new task...">
-        <button id="todo-add">Add</button>
+      <div class="todo-controls">
+        <div class="todo-input-row">
+          <input id="todo-input" type="text" placeholder="Add a new task...">
+          <button id="todo-add">Add</button>
+        </div>
+        <select id="todo-sort">
+          <option value="pending">Pending first</option>
+          <option value="alpha">Alphabetical (A-Z)</option>
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+        </select>
       </div>
       <ul id="todo-items"></ul>
     </section>
@@ -449,11 +544,12 @@ Contains all styles as described in the Layout & Styling section: CSS Grid, card
 ### js/app.js
 
 Contains all JavaScript organized as:
-1. Module-level state variables (`tasks`, `links`, timer state)
-2. Initialization function (`init()`) called on DOMContentLoaded
-3. Time/Greeting functions: `updateClock()`, `updateGreeting()`
-4. Timer functions: `startTimer()`, `stopTimer()`, `resetTimer()`, `timerTick()`
-5. To-Do functions: `addTodo()`, `toggleTodo()`, `editTodo()`, `deleteTodo()`, `renderTodos()`, `saveTodos()`
-6. Link functions: `addLink()`, `editLink()`, `deleteLink()`, `renderLinks()`, `saveLinks()`
-7. Storage utility: `storageAvailable()` check, `loadFromStorage()`, `saveToStorage()` with error handling
-8. Event listener attachment in `init()`
+1. Module-level state variables (`tasks`, `links`, timer state, `currentSort`, `previousGreetingCategory`)
+2. Initialization function (`DOMContentLoaded` handler) called on page load
+3. Theme functions: `initTheme()`, `toggleTheme()`, `updateThemeIcon()`
+4. Time/Greeting functions: `updateClock()`, `initClock()`, `initGreeting()`, `getGreetingCategory()`, `updateGreetingDisplay()`
+5. Timer functions: `startTimer()`, `stopTimer()`, `resetTimer()`, `timerTick()`, `timerComplete()`, `updateTimerButtons()`
+6. To-Do functions: `addTodo()`, `toggleTodo()`, `editTodo()`, `deleteTodo()`, `sortTasks()`, `renderTodos()`, `showTodoWarning()`
+7. Link functions: `addLink()`, `editLink()`, `deleteLink()`, `renderLinks()`, `startEditLink()`
+8. Storage utility: `storageAvailable()`, `showStorageWarning()`, `loadFromStorage()`, `saveToStorage()`
+9. Event listener attachment in `initEventListeners()`

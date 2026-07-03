@@ -5,13 +5,45 @@ let timerMinutes = 25;
 let timerSeconds = 0;
 let timerIntervalId = null;
 let timerStatus = 'idle'; // 'idle', 'running', 'paused'
+let currentSort = localStorage.getItem('todoSort') || 'pending';
 
 let previousGreetingCategory = null;
+let themeToggleBtn = null;
+
+// Theme
+function initTheme() {
+  const saved = localStorage.getItem('theme');
+  if (saved) {
+    document.documentElement.classList.toggle('dark', saved === 'dark');
+  } else {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.classList.toggle('dark', prefersDark);
+  }
+  updateThemeIcon();
+}
+
+function toggleTheme() {
+  document.documentElement.classList.toggle('dark');
+  const isDark = document.documentElement.classList.contains('dark');
+  localStorage.setItem('theme', isDark ? 'dark' : 'light');
+  updateThemeIcon();
+}
+
+function updateThemeIcon() {
+  if (!themeToggleBtn) {
+    themeToggleBtn = document.getElementById('theme-toggle');
+  }
+  if (themeToggleBtn) {
+    const isDark = document.documentElement.classList.contains('dark');
+    themeToggleBtn.textContent = isDark ? '\u2600' : '\uD83C\uDF19';
+    themeToggleBtn.setAttribute('aria-pressed', isDark);
+  }
+}
 
 // Clock
 function updateClock() {
   const now = new Date();
-  const hours = now.getHours() % 12 || 12;
+  const hours = String(now.getHours()).padStart(2, '0');
   const minutes = String(now.getMinutes()).padStart(2, '0');
   const seconds = String(now.getSeconds()).padStart(2, '0');
   const clockElement = document.getElementById('clock');
@@ -143,11 +175,32 @@ function loadFromStorage() {
 }
 
 // To-Do List
+function showTodoWarning(message) {
+  let warning = document.getElementById('todo-warning');
+  if (!warning) {
+    warning = document.createElement('div');
+    warning.id = 'todo-warning';
+    document.querySelector('.todo-input-row').after(warning);
+  }
+  warning.textContent = message;
+  warning.style.cssText = 'color:var(--danger);font-size:0.8rem;margin-top:0.25rem;';
+  clearTimeout(warning._timeout);
+  warning._timeout = setTimeout(() => { warning.textContent = ''; }, 2000);
+}
+
 function addTodo(text) {
   if (!text || text.trim() === '') return;
+  const trimmed = text.trim();
+  const isDuplicate = tasks.some(
+    t => t.text.toLowerCase() === trimmed.toLowerCase()
+  );
+  if (isDuplicate) {
+    showTodoWarning('Task already exists');
+    return;
+  }
   const newTask = {
     id: crypto.randomUUID(),
-    text: text.trim(),
+    text: trimmed,
     done: false
   };
   tasks.push(newTask);
@@ -180,20 +233,41 @@ function deleteTodo(id) {
   saveToStorage('tasks', tasks);
 }
 
+function sortTasks(arr) {
+  const sorted = [...arr];
+  switch (currentSort) {
+    case 'pending':
+      sorted.sort((a, b) => a.done - b.done);
+      break;
+    case 'alpha':
+      sorted.sort((a, b) => a.text.localeCompare(b.text));
+      break;
+    case 'newest':
+      sorted.reverse();
+      break;
+    case 'oldest':
+    default:
+      break;
+  }
+  return sorted;
+}
+
 function renderTodos() {
   const todoListElement = document.getElementById('todo-items');
   if (!todoListElement) return;
 
   todoListElement.innerHTML = '';
-  tasks.forEach(task => {
+  const sorted = sortTasks(tasks);
+  sorted.forEach(task => {
     const li = document.createElement('li');
     li.className = 'todo-item';
     li.innerHTML = `
       <input type="checkbox" class="todo-checkbox" data-id="${task.id}" ${task.done ? 'checked' : ''}>
-      <span class="todo-text ${task.done ? 'done' : ''}" contenteditable="false" data-id="${task.id}">${task.text}</span>
+      <span class="todo-text ${task.done ? 'done' : ''}" contenteditable="false" data-id="${task.id}"></span>
       <button class="edit-btn" data-id="${task.id}">Edit</button>
       <button class="delete-btn" data-id="${task.id}">Delete</button>
     `;
+    li.querySelector('.todo-text').textContent = task.text;
     todoListElement.appendChild(li);
   });
 
@@ -236,10 +310,6 @@ function renderTodos() {
   });
 }
 
-function saveTodos() {
-  saveToStorage('tasks', tasks);
-}
-
 // Quick Links
 function addLink(name, url) {
   if (!name || !url || name.trim() === '' || url.trim() === '') return;
@@ -277,17 +347,25 @@ function renderLinks() {
   links.forEach(link => {
     const linkButton = document.createElement('button');
     linkButton.className = 'link-button';
+    linkButton.dataset.linkId = link.id;
     linkButton.innerHTML = `
       <span>${link.name}</span>
-      <button class="small-delete-btn" data-id="${link.id}">\u00d7</button>
+      <div class="link-card-controls">
+        <button class="small-edit-btn" data-id="${link.id}" title="Edit link">\u270E</button>
+        <button class="small-delete-btn" data-id="${link.id}" title="Delete link">\u00d7</button>
+      </div>
     `;
     linkButton.addEventListener('click', (e) => {
-      if (e.target.classList.contains('small-delete-btn')) return;
+      if (e.target.closest('.link-card-controls')) return;
       window.open(link.url, '_blank', 'noopener,noreferrer');
     });
 
-    const deleteBtn = linkButton.querySelector('.small-delete-btn');
-    deleteBtn.addEventListener('click', (e) => {
+    linkButton.querySelector('.small-edit-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      startEditLink(link.id);
+    });
+
+    linkButton.querySelector('.small-delete-btn').addEventListener('click', (e) => {
       e.stopPropagation();
       deleteLink(link.id);
     });
@@ -296,8 +374,53 @@ function renderLinks() {
   });
 }
 
-function saveLinks() {
-  saveToStorage('links', links);
+function startEditLink(id) {
+  const link = links.find(l => l.id === id);
+  if (!link) return;
+
+  const linksGridElement = document.getElementById('links-grid');
+  const existingForm = linksGridElement.querySelector('.link-edit-form');
+  if (existingForm) existingForm.remove();
+
+  const form = document.createElement('div');
+  form.className = 'link-edit-form';
+  form.innerHTML = `
+    <input type="text" class="edit-name-input" value="${link.name}" placeholder="Name">
+    <input type="url" class="edit-url-input" value="${link.url}" placeholder="https://">
+    <div class="edit-form-buttons">
+      <button class="edit-save-btn">Save</button>
+      <button class="edit-cancel-btn">Cancel</button>
+    </div>
+  `;
+
+  const card = linksGridElement.querySelector(`[data-link-id="${id}"]`);
+  if (card) {
+    card.replaceWith(form);
+  }
+
+  form.querySelector('.edit-name-input').focus();
+
+  form.querySelector('.edit-save-btn').addEventListener('click', () => {
+    const newName = form.querySelector('.edit-name-input').value.trim();
+    const newUrl = form.querySelector('.edit-url-input').value.trim();
+    if (newName && newUrl) {
+      editLink(id, newName, newUrl);
+    }
+  });
+
+  form.querySelector('.edit-cancel-btn').addEventListener('click', () => {
+    renderLinks();
+  });
+
+  form.querySelectorAll('input').forEach(input => {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        form.querySelector('.edit-save-btn').click();
+      } else if (e.key === 'Escape') {
+        renderLinks();
+      }
+    });
+  });
 }
 
 // Focus Timer
@@ -370,8 +493,6 @@ function timerComplete() {
   } else if (Notification && Notification.permission !== 'denied') {
     Notification.requestPermission();
   }
-
-  alert('Time is up!');
 }
 
 function updateTimerButtons() {
@@ -423,6 +544,16 @@ function initEventListeners() {
     });
   }
 
+  const todoSortSelect = document.getElementById('todo-sort');
+  if (todoSortSelect) {
+    todoSortSelect.value = currentSort;
+    todoSortSelect.addEventListener('change', (e) => {
+      currentSort = e.target.value;
+      localStorage.setItem('todoSort', currentSort);
+      renderTodos();
+    });
+  }
+
   if (linkAddBtn && linkNameInput && linkUrlInput) {
     linkAddBtn.addEventListener('click', () => {
       const name = linkNameInput.value;
@@ -468,6 +599,7 @@ function initEventListeners() {
 
 // Init
 document.addEventListener('DOMContentLoaded', () => {
+  initTheme();
   loadFromStorage();
   initClock();
   initGreeting();
@@ -475,4 +607,9 @@ document.addEventListener('DOMContentLoaded', () => {
   renderTodos();
   renderLinks();
   initEventListeners();
+
+  const themeToggleBtnEl = document.getElementById('theme-toggle');
+  if (themeToggleBtnEl) {
+    themeToggleBtnEl.addEventListener('click', toggleTheme);
+  }
 });
